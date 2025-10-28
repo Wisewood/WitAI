@@ -1,6 +1,5 @@
 /**
- * Apify Actor - Alibaba Contact Automation
- * This actor contacts Alibaba suppliers through their contact forms
+ * Apify Actor - Alibaba Contact Automation (Puppeteer Version)
  */
 
 import { Actor } from 'apify';
@@ -35,8 +34,8 @@ const crawler = new PuppeteerCrawler({
         console.log(`Processing: ${request.url}`);
         
         try {
-            // Wait for page to load
-            await page.waitForLoadState('domcontentloaded');
+            // Wait for page to load (Puppeteer way)
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
             console.log('Page loaded');
             
             // Random delay to appear human
@@ -61,16 +60,15 @@ const crawler = new PuppeteerCrawler({
                 'a:has-text("Contact Supplier")',
                 'button:has-text("Contact Now")',
                 '[class*="contact-supplier"]',
-                '[class*="contact-btn"]'
+                '[class*="contact-btn"]',
+                'button[class*="contact"]'
             ];
             
             let contactButton = null;
             for (const selector of contactSelectors) {
                 try {
-                    contactButton = await page.waitForSelector(selector, { 
-                        timeout: 5000,
-                        state: 'visible' 
-                    });
+                    await page.waitForSelector(selector, { timeout: 5000, visible: true });
+                    contactButton = await page.$(selector);
                     if (contactButton) {
                         console.log(`Found contact button with: ${selector}`);
                         break;
@@ -95,10 +93,8 @@ const crawler = new PuppeteerCrawler({
             
             // Find message textarea
             console.log('Looking for message field...');
-            const messageBox = await page.waitForSelector('textarea', { 
-                timeout: 10000,
-                state: 'visible'
-            });
+            await page.waitForSelector('textarea', { timeout: 10000, visible: true });
+            const messageBox = await page.$('textarea');
             
             if (!messageBox) {
                 throw new Error('Message field not found');
@@ -126,17 +122,21 @@ const crawler = new PuppeteerCrawler({
                 'button:has-text("Submit")',
                 'button[type="submit"]',
                 'input[type="submit"]',
-                '[class*="submit-btn"]'
+                '[class*="submit-btn"]',
+                '[class*="send"]'
             ];
             
             let submitButton = null;
             for (const selector of submitSelectors) {
                 try {
                     const btn = await page.$(selector);
-                    if (btn && await btn.isVisible()) {
-                        submitButton = btn;
-                        console.log(`Found submit button with: ${selector}`);
-                        break;
+                    if (btn) {
+                        const isVisible = await btn.isIntersectingViewport();
+                        if (isVisible) {
+                            submitButton = btn;
+                            console.log(`Found submit button with: ${selector}`);
+                            break;
+                        }
                     }
                 } catch (e) {
                     continue;
@@ -154,23 +154,17 @@ const crawler = new PuppeteerCrawler({
             
             // Check for success message
             console.log('Checking for success confirmation...');
-            const successSelectors = [
-                'text=success',
-                'text=sent',
-                'text=thank you',
-                '[class*="success"]'
-            ];
-            
             let success = false;
-            for (const selector of successSelectors) {
-                try {
-                    await page.waitForSelector(selector, { timeout: 3000 });
-                    success = true;
-                    console.log('Success message found!');
-                    break;
-                } catch (e) {
-                    continue;
-                }
+            
+            try {
+                await page.waitForFunction(() => {
+                    const text = document.body.innerText.toLowerCase();
+                    return text.includes('success') || text.includes('sent') || text.includes('thank you');
+                }, { timeout: 5000 });
+                success = true;
+                console.log('Success message found!');
+            } catch (e) {
+                console.log('No clear success message, but form was submitted');
             }
             
             result = {
