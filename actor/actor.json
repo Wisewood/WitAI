@@ -1,0 +1,28 @@
+{
+    "actorSpecification": 1,
+    "name": "alibaba-contact-automation",
+    "version": "1.0.0",
+    "buildTag": "latest",
+    "environmentVariables": {},
+    "dockerfile": "./Dockerfile",
+    "readme": "./README.md",
+    "input": "./input_schema.json",
+    "storages": {
+        "dataset": {
+            "actorSpecification": 1,
+            "title": "Alibaba Contact Results",
+            "views": {
+                "overview": {
+                    "title": "Overview",
+                    "transformation": {
+                        "fields": ["url", "status", "success", "timestamp"]
+                    },
+                    "display": {
+                        "component": "table",
+                        "properties": {}
+                    }
+                }
+            }
+        }
+    }
+}
