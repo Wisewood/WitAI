@@ -1,0 +1,22 @@
+{
+    "title": "Alibaba Contact Automation Input",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "url": {
+            "title": "Supplier URL",
+            "type": "string",
+            "description": "The Alibaba supplier page URL",
+            "editor": "textfield",
+            "example": "https://supplier.alibaba.com/page.html"
+        },
+        "message": {
+            "title": "Message",
+            "type": "string",
+            "description": "The quotation request message to send",
+            "editor": "textarea",
+            "example": "Dear Supplier,\n\nI am interested in your products and would like to request a quotation.\n\nBest regards"
+        }
+    },
+    "required": ["url", "message"]
+}
