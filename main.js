@@ -1,130 +1,208 @@
 /**
  * Apify Actor - Alibaba Contact Automation
- * 
- * This actor contacts Alibaba suppliers through their contact forms.
- * Use this with n8n Cloud since n8n Cloud doesn't have Playwright.
- * 
- * INPUT:
- * {
- *   "url": "https://supplier.alibaba.com/page",
- *   "message": "Your quotation request message"
- * }
- * 
- * OUTPUT:
- * {
- *   "success": true/false,
- *   "url": "supplier-url",
- *   "status": "sent/failed",
- *   "message": "Result message",
- *   "timestamp": "ISO timestamp"
- * }
+ * This actor contacts Alibaba suppliers through their contact forms
  */
 
-const Apify = require('apify');
+import { Actor } from 'apify';
+import { PuppeteerCrawler } from 'crawlee';
 
-Apify.main(async () => {
-    const input = await Apify.getInput();
-    const { url, message } = input;
+await Actor.init();
 
-    console.log(`Starting automation for: ${url}`);
+const input = await Actor.getInput();
+const { url, message } = input;
 
-    const browser = await Apify.launchPuppeteer({
-        useChrome: true,
-        stealth: true,
+console.log('Input received:', { url, message: message?.substring(0, 50) + '...' });
+
+if (!url || !message) {
+    throw new Error('Missing required input: url and message are required');
+}
+
+let result = {
+    success: false,
+    url: url,
+    status: 'failed',
+    timestamp: new Date().toISOString()
+};
+
+const crawler = new PuppeteerCrawler({
+    launchContext: {
         launchOptions: {
-            headless: true
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         }
-    });
-
-    try {
-        const page = await browser.newPage();
+    },
+    async requestHandler({ page, request }) {
+        console.log(`Processing: ${request.url}`);
         
-        // Navigate to supplier page
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-        
-        // Wait a bit
-        await page.waitForTimeout(2000 + Math.random() * 2000);
-        
-        // Scroll randomly (human behavior)
-        await page.evaluate(() => {
-            window.scrollBy({
-                top: Math.floor(Math.random() * 300) + 100,
-                behavior: 'smooth'
+        try {
+            // Wait for page to load
+            await page.waitForLoadState('domcontentloaded');
+            console.log('Page loaded');
+            
+            // Random delay to appear human
+            const delay = Math.floor(Math.random() * 2000) + 2000;
+            console.log(`Waiting ${delay}ms...`);
+            await page.waitForTimeout(delay);
+            
+            // Scroll page (human behavior)
+            await page.evaluate(() => {
+                window.scrollBy({
+                    top: Math.floor(Math.random() * 300) + 100,
+                    behavior: 'smooth'
+                });
             });
-        });
-        
-        await page.waitForTimeout(1000);
-        
-        // Find contact button
-        const contactButton = await page.$('button:has-text("Contact Supplier"), a:has-text("Contact Supplier"), .contact-supplier');
-        
-        if (!contactButton) {
-            throw new Error('Contact button not found');
+            await page.waitForTimeout(1000);
+            
+            // Look for contact button
+            console.log('Looking for contact button...');
+            
+            const contactSelectors = [
+                'button:has-text("Contact Supplier")',
+                'a:has-text("Contact Supplier")',
+                'button:has-text("Contact Now")',
+                '[class*="contact-supplier"]',
+                '[class*="contact-btn"]'
+            ];
+            
+            let contactButton = null;
+            for (const selector of contactSelectors) {
+                try {
+                    contactButton = await page.waitForSelector(selector, { 
+                        timeout: 5000,
+                        state: 'visible' 
+                    });
+                    if (contactButton) {
+                        console.log(`Found contact button with: ${selector}`);
+                        break;
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            if (!contactButton) {
+                throw new Error('Contact button not found on page');
+            }
+            
+            // Click contact button
+            console.log('Clicking contact button...');
+            await contactButton.click();
+            await page.waitForTimeout(2000);
+            
+            // Wait for form/modal to appear
+            console.log('Waiting for contact form...');
+            await page.waitForTimeout(1000);
+            
+            // Find message textarea
+            console.log('Looking for message field...');
+            const messageBox = await page.waitForSelector('textarea', { 
+                timeout: 10000,
+                state: 'visible'
+            });
+            
+            if (!messageBox) {
+                throw new Error('Message field not found');
+            }
+            
+            console.log('Filling message field...');
+            await messageBox.click();
+            await page.waitForTimeout(300);
+            
+            // Type message character by character (human-like)
+            for (const char of message) {
+                await page.keyboard.type(char);
+                await page.waitForTimeout(Math.floor(Math.random() * 100) + 50);
+            }
+            
+            console.log('Message typed successfully');
+            
+            // Wait before submitting
+            await page.waitForTimeout(Math.floor(Math.random() * 2000) + 2000);
+            
+            // Find submit button
+            console.log('Looking for submit button...');
+            const submitSelectors = [
+                'button:has-text("Send")',
+                'button:has-text("Submit")',
+                'button[type="submit"]',
+                'input[type="submit"]',
+                '[class*="submit-btn"]'
+            ];
+            
+            let submitButton = null;
+            for (const selector of submitSelectors) {
+                try {
+                    const btn = await page.$(selector);
+                    if (btn && await btn.isVisible()) {
+                        submitButton = btn;
+                        console.log(`Found submit button with: ${selector}`);
+                        break;
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            if (!submitButton) {
+                throw new Error('Submit button not found');
+            }
+            
+            // Click submit
+            console.log('Clicking submit button...');
+            await submitButton.click();
+            await page.waitForTimeout(3000);
+            
+            // Check for success message
+            console.log('Checking for success confirmation...');
+            const successSelectors = [
+                'text=success',
+                'text=sent',
+                'text=thank you',
+                '[class*="success"]'
+            ];
+            
+            let success = false;
+            for (const selector of successSelectors) {
+                try {
+                    await page.waitForSelector(selector, { timeout: 3000 });
+                    success = true;
+                    console.log('Success message found!');
+                    break;
+                } catch (e) {
+                    continue;
+                }
+            }
+            
+            result = {
+                success: true,
+                url: url,
+                status: success ? 'confirmed' : 'sent',
+                message: success ? 'Message sent and confirmed' : 'Message sent (confirmation unclear)',
+                timestamp: new Date().toISOString()
+            };
+            
+            console.log('Automation completed successfully');
+            
+        } catch (error) {
+            console.error('Error during automation:', error.message);
+            result = {
+                success: false,
+                url: url,
+                status: 'failed',
+                error: error.message,
+                timestamp: new Date().toISOString()
+            };
         }
-        
-        // Click contact button
-        await contactButton.click();
-        await page.waitForTimeout(2000);
-        
-        // Find message field
-        const messageBox = await page.waitForSelector('textarea', { timeout: 10000 });
-        
-        if (!messageBox) {
-            throw new Error('Message field not found');
-        }
-        
-        // Type message with human-like speed
-        await messageBox.click();
-        await page.waitForTimeout(300);
-        
-        for (const char of message) {
-            await page.keyboard.type(char);
-            await page.waitForTimeout(50 + Math.random() * 100);
-        }
-        
-        // Wait before submitting
-        await page.waitForTimeout(2000 + Math.random() * 2000);
-        
-        // Find and click submit button
-        const submitButton = await page.$('button:has-text("Send"), button:has-text("Submit"), button[type="submit"]');
-        
-        if (!submitButton) {
-            throw new Error('Submit button not found');
-        }
-        
-        await submitButton.click();
-        await page.waitForTimeout(3000);
-        
-        // Check for success
-        const successElement = await page.$('text=success, text=sent, text=thank you');
-        const success = !!successElement;
-        
-        await browser.close();
-        
-        const result = {
-            success: true,
-            status: success ? 'confirmed' : 'sent',
-            url: url,
-            message: success ? 'Message sent and confirmed' : 'Message sent',
-            timestamp: new Date().toISOString()
-        };
-        
-        console.log('Result:', result);
-        await Apify.setValue('OUTPUT', result);
-        
-    } catch (error) {
-        console.error('Error:', error.message);
-        
-        await browser.close();
-        
-        const result = {
-            success: false,
-            status: 'failed',
-            url: url,
-            error: error.message,
-            timestamp: new Date().toISOString()
-        };
-        
-        await Apify.setValue('OUTPUT', result);
-    }
+    },
+    maxRequestsPerCrawl: 1,
+    maxConcurrency: 1
 });
+
+// Run the crawler
+await crawler.run([url]);
+
+// Save result
+console.log('Final result:', result);
+await Actor.pushData(result);
+
+await Actor.exit();
